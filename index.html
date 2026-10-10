@@ -1,0 +1,799 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>:root{color-scheme:light}body{margin:0;font-size:14px}[hidden]:not([hidden=until-found i]){display:none!important}img{max-width:100%}</style><title>RGI-BWT Explorer</title></head><body>
+<style>
+/* Layout: load screen, or summary tiles + filter row + scatter/detail pair over four ranked-bar cards. */
+:root{
+  --page:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#898781;
+  --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,.10); --wash:rgba(11,11,11,.045);
+  --s1:#2a78d6; --ctx:#cdcbc3; --bad:#b2182b;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --page:#0d0d0d; --surface:#1a1a19; --ink:#f0efec; --ink2:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10); --wash:rgba(255,255,255,.055);
+    --s1:#3987e5; --ctx:#4a4a46; --bad:#e06c75; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --page:#0d0d0d; --surface:#1a1a19; --ink:#f0efec; --ink2:#c3c2b7; --muted:#898781;
+  --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10); --wash:rgba(255,255,255,.055);
+  --s1:#3987e5; --ctx:#4a4a46; --bad:#e06c75; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--page);color:var(--ink);font:14px/1.45 var(--sans);padding-inline:16px;padding-block:28px 40px}
+.wrap{max-width:1180px;margin-inline:auto;display:flex;flex-direction:column;gap:20px}
+h1{font-size:24px;line-height:1.2;font-weight:600;margin:0;letter-spacing:-.01em;text-wrap:balance}
+h2{font-size:15px;font-weight:600;margin:0;line-height:1.3}
+p{margin:0}
+.sub{color:var(--ink2);margin-top:6px;max-width:75ch;text-wrap:pretty}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--s1);outline-offset:2px;border-radius:4px}
+
+/* load screen */
+.loader{max-width:640px;margin:8vh auto 0;display:flex;flex-direction:column;gap:18px;align-items:stretch}
+.loader .head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.drop{border:2px dashed var(--border);border-radius:10px;background:var(--surface);padding:44px 24px;text-align:center;color:var(--ink2);transition:border-color .12s,background .12s}
+.drop.over{border-color:var(--s1);background:var(--wash)}
+.drop b{display:block;color:var(--ink);font-size:16px;margin-bottom:6px}
+.drop .hint{color:var(--muted);font-size:12.5px;margin-top:10px}
+.btn-primary{display:inline-block;background:var(--ink);color:var(--surface);border:0;border-radius:6px;padding:8px 18px;font-size:14px;font-weight:500;cursor:pointer;margin-top:14px}
+.btn-primary:hover{opacity:.9}
+.errs{border:1px solid var(--border);border-left:3px solid var(--bad);border-radius:6px;background:var(--surface);padding:10px 14px;font-size:13px;color:var(--ink2)}
+.errs b{color:var(--bad)}
+.errs ul{margin:6px 0 0;padding-left:18px}
+.errs li{margin:2px 0;overflow-wrap:anywhere}
+
+/* header controls */
+.hrow{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+.hctl{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+select,input[type=search]{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:5px 10px}
+select{max-width:280px}
+.ghost{border:1px solid var(--border);background:transparent;border-radius:6px;padding:5px 12px;font-size:13px;color:var(--ink2)}
+.ghost:hover{background:var(--wash)}
+.ghost[hidden]{display:none}
+
+/* tiles */
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.tile{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 16px;min-width:0}
+.tile .l{color:var(--ink2);font-size:12.5px}
+.tile .v{font-size:30px;font-weight:600;line-height:1.15;margin-top:4px;letter-spacing:-.01em}
+.tile .s{color:var(--muted);font-size:12.5px;margin-top:2px}
+
+/* filters */
+.filters{display:flex;flex-wrap:wrap;gap:14px 28px;align-items:center}
+.fg{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.fg>span{color:var(--ink2);font-size:12.5px}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:6px;background:var(--surface);padding:2px;gap:2px}
+.seg button{border:0;background:transparent;padding:5px 11px;border-radius:4px;font-size:13px;color:var(--ink2)}
+.seg button:hover{background:var(--wash)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--surface)}
+.reset{border:0;background:none;color:var(--s1);padding:5px 4px;font-size:13px;text-decoration:underline;text-underline-offset:3px}
+.reset[hidden]{display:none}
+
+/* grid + cards */
+.grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:12px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;min-width:0;display:flex;flex-direction:column;gap:12px}
+.c-scatter{grid-column:span 7}.c-detail{grid-column:span 5}
+.c-genes,.c-drug{grid-column:span 6}
+.c-mech{grid-column:span 5}.c-fam{grid-column:span 7}
+.ch{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.ch .t p{color:var(--ink2);font-size:12.5px;margin-top:2px;text-wrap:pretty}
+.tog{border:1px solid var(--border);background:transparent;border-radius:6px;padding:3px 10px;font-size:12.5px;color:var(--ink2);flex:none}
+.tog:hover{background:var(--wash)}
+.note{color:var(--muted);font-size:12px;text-wrap:pretty}
+.empty{color:var(--ink2);padding:40px 8px;text-align:center}
+
+/* scatter */
+.plot{position:relative;min-width:0}
+.plot svg{display:block;width:100%;overflow:visible}
+svg text{font-family:var(--sans);fill:var(--muted);font-size:11.5px}
+svg text.ttl{fill:var(--ink2);font-size:12px}
+.pt{cursor:pointer}
+
+/* ranked bars */
+.bars{display:flex;flex-direction:column}
+.brow{display:grid;grid-template-columns:minmax(80px,40%) minmax(0,1fr) 46px;align-items:center;gap:10px;min-height:28px;padding:0 6px;margin-inline:-6px;border-radius:4px}
+.brow.pick{cursor:pointer}
+.brow:hover,.brow.sel{background:var(--wash)}
+.brow .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink);font-size:13px}
+.brow .tr{position:relative;height:28px}
+.brow .bar{position:absolute;left:0;top:7px;height:14px;background:var(--s1);border-radius:0 4px 4px 0;min-width:2px}
+.brow .vl{position:absolute;top:50%;transform:translateY(-50%);font-size:12.5px;color:var(--ink);white-space:nowrap;font-variant-numeric:tabular-nums}
+.brow .as{text-align:right;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+.bhead{display:grid;grid-template-columns:minmax(80px,40%) minmax(0,1fr) 46px;gap:10px;padding:0 6px;margin:0 -6px -6px;color:var(--muted);font-size:11.5px}
+.bhead span:last-child{text-align:right}
+
+/* table view */
+.tbl{overflow:auto;max-height:380px;border:1px solid var(--border);border-radius:6px}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th,td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--grid);white-space:nowrap}
+th{position:sticky;top:0;background:var(--surface);color:var(--ink2);font-weight:500}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+td.w{white-space:normal;min-width:180px}
+tbody tr:last-child td{border-bottom:0}
+
+/* detail */
+.dh{display:flex;flex-direction:column;gap:2px}
+.dh h2{font-size:18px;overflow-wrap:anywhere}
+.acc{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.out{display:inline-block;margin-left:8px;font-family:var(--sans);font-size:11.5px;color:var(--ink2);border:1px solid var(--border);border-radius:4px;padding:0 6px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(78px,1fr));gap:10px 14px;margin:0}
+.stats div{min-width:0}
+.stats dt{color:var(--ink2);font-size:12px}
+.stats dd{margin:0;font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
+.sec{display:flex;flex-direction:column;gap:6px}
+.sec h3{font-size:12.5px;font-weight:500;color:var(--ink2);margin:0}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--border);background:var(--wash);border-radius:4px;padding:1px 8px;font-size:12.5px;color:var(--ink)}
+
+/* search, sortable tables, cross-sample map, status */
+.fg input[type=search]{min-width:240px}
+.tools{display:flex;justify-content:flex-end;margin-bottom:6px}
+.tools .ghost{padding:3px 10px;font-size:12.5px}
+th .sb{all:unset;cursor:pointer;display:inline-flex;gap:5px;align-items:center}
+th .sb:focus-visible{outline:2px solid var(--s1);outline-offset:2px;border-radius:3px}
+th .ar{font-size:9px;color:var(--ink)}
+th[aria-sort=none] .ar{opacity:.35}
+.hm{overflow:auto;border:1px solid var(--border);border-radius:6px;padding:8px}
+.hmg{display:grid;gap:2px;align-items:stretch;justify-content:start;min-width:max-content}
+.hmh{writing-mode:vertical-rl;transform:rotate(180deg);height:132px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--ink2);padding-block:2px;text-align:left}
+.hmh.cur{color:var(--ink);font-weight:600}
+.hml{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12.5px;display:flex;align-items:center;padding-right:8px;min-height:24px}
+.hmc{all:unset;display:block;box-sizing:border-box;min-height:24px;border-radius:3px;cursor:pointer}
+.hmc.no{border:1px solid var(--grid);cursor:default}
+.hmc:focus-visible{outline:2px solid var(--ink);outline-offset:1px}
+.hmc.cur{box-shadow:inset 0 0 0 2px var(--ink)}
+.lg{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px;flex-wrap:wrap}
+.lg i{display:block;width:140px;height:8px;border-radius:4px;background:linear-gradient(90deg,color-mix(in srgb,var(--s1) 16%,var(--surface)),var(--s1))}
+.busy{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--surface);padding:8px 14px;border-radius:6px;font-size:13px;z-index:20;max-width:90vw;overflow-wrap:anywhere}
+.card[hidden]{display:none}
+.c-cmp{grid-column:1/-1}
+.errs .ghost{margin-top:8px;padding:3px 10px;font-size:12.5px}
+.chead{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+
+/* tooltip */
+#tip{position:fixed;z-index:10;pointer-events:none;background:var(--surface);color:var(--ink);border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,.14);padding:8px 10px;font-size:12.5px;max-width:300px;opacity:0;transition:opacity .08s}
+#tip.on{opacity:1}
+#tip b{display:block;font-weight:600;margin-bottom:3px;overflow-wrap:anywhere}
+#tip .r{display:flex;justify-content:space-between;gap:16px;color:var(--ink2)}
+#tip .r span:last-child{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+
+@media (max-width:900px){
+  .c-scatter,.c-detail,.c-genes,.c-drug,.c-mech,.c-fam{grid-column:1/-1}
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:480px){
+  .tile .v{font-size:25px}
+  .brow,.bhead{grid-template-columns:minmax(70px,38%) minmax(0,1fr) 40px}
+}
+@media (prefers-reduced-motion:reduce){#tip{transition:none}}
+</style>
+
+
+<main class="wrap loader" id="loadscr">
+  <div class="head">
+    <div>
+      <h1>RGI-BWT Explorer</h1>
+      <p class="sub">Open one or more <code>rgi bwt</code> result files (<code>*.allele_mapping_data.json</code>). Everything runs in this browser tab — no upload, no server, works offline.</p>
+    </div>
+    <button class="ghost" id="theme0" type="button" aria-label="Toggle theme">Theme</button>
+  </div>
+  <div class="drop" id="drop">
+    <b>Drop JSON files here</b>
+    or
+    <br>
+    <button class="btn-primary" id="browse" type="button">Browse files…</button>
+    <p class="hint">You can also drop files anywhere on this page, any time. Select any number of samples at once (e.g. all files matching <code>*.allele_mapping_data.json</code> under an rgi run directory).</p>
+  </div>
+  <input type="file" id="filein" multiple accept=".json,application/json" hidden>
+  <div class="errs" id="errs" hidden></div>
+</main>
+
+<main class="wrap" id="app" hidden>
+  <header>
+    <div class="hrow">
+      <h1 id="h1">RGI-BWT Explorer</h1>
+      <div class="hctl">
+        <label for="samp" class="sub" style="margin:0">Sample</label>
+        <select id="samp"></select>
+        <button class="ghost" id="more" type="button">Load more…</button>
+        <button class="ghost" id="rm" type="button">Remove sample</button>
+        <button class="ghost" id="clear" type="button">Clear all</button>
+        <button class="ghost" id="theme" type="button" aria-label="Toggle theme">Theme</button>
+      </div>
+    </div>
+    <p class="sub" id="sub"></p>
+  </header>
+  <div class="errs" id="errs2" hidden></div>
+
+  <section class="kpis" id="kpis" aria-label="Summary"></section>
+
+  <section class="filters" aria-label="Filters">
+    <div class="fg"><span id="lc">Minimum reference covered</span>
+      <div class="seg" role="group" aria-labelledby="lc" id="f-cov"></div></div>
+    <div class="fg"><span id="lr">Minimum mapped reads</span>
+      <div class="seg" role="group" aria-labelledby="lr" id="f-reads"></div></div>
+    <div class="fg"><span id="lm">Count drug classes, mechanisms and families by</span>
+      <div class="seg" role="group" aria-labelledby="lm" id="f-measure"></div></div>
+    <div class="fg"><label for="q" id="lq" style="color:var(--ink2);font-size:12.5px">Find</label>
+      <input type="search" id="q" placeholder="gene, ARO, drug class, family…" autocomplete="off" spellcheck="false"></div>
+    <button class="reset" id="reset" hidden>Reset filters</button>
+  </section>
+
+  <div class="grid">
+    <article class="card c-scatter">
+      <div class="ch"><div class="t"><h2>Which hits are real</h2>
+        <p>Each dot is one gene. Genes covered end to end at useful depth are credible; short, thin hits are usually spurious.</p></div>
+        <button class="tog" data-card="scatter" aria-pressed="false">Table</button></div>
+      <div id="v-scatter"></div>
+    </article>
+
+    <article class="card c-detail" id="detail"></article>
+
+    <article class="card c-genes">
+      <div class="ch"><div class="t"><h2>Top genes by mapped reads</h2>
+        <p>Click a gene to inspect it. The right column is the share of the gene covered.</p></div>
+        <button class="tog" data-card="genes" aria-pressed="false">Table</button></div>
+      <div id="v-genes"></div>
+    </article>
+
+    <article class="card c-drug">
+      <div class="ch"><div class="t"><h2>Drug classes</h2>
+        <p id="p-drug"></p></div>
+        <button class="tog" data-card="drug" aria-pressed="false">Table</button></div>
+      <div id="v-drug"></div>
+    </article>
+
+    <article class="card c-mech">
+      <div class="ch"><div class="t"><h2>Resistance mechanism</h2>
+        <p id="p-mech"></p></div>
+        <button class="tog" data-card="mech" aria-pressed="false">Table</button></div>
+      <div id="v-mech"></div>
+    </article>
+
+    <article class="card c-fam">
+      <div class="ch"><div class="t"><h2>AMR gene families</h2>
+        <p id="p-fam"></p></div>
+        <button class="tog" data-card="fam" aria-pressed="false">Table</button></div>
+      <div id="v-fam"></div>
+    </article>
+
+    <article class="card c-cmp" id="cmp" hidden>
+      <div class="ch"><div class="t"><h2>Across samples</h2><p id="p-cmp"></p></div>
+        <div class="chead"><div class="seg" role="group" aria-label="Colour cells by" id="f-cmp"></div>
+        <button class="tog" data-card="cmp" aria-pressed="false">Table</button></div></div>
+      <div id="v-cmp"></div>
+    </article>
+  </div>
+
+  <p class="note" id="foot"></p>
+</main>
+<div id="tip" role="tooltip"></div>
+<div class="busy" id="busy" role="status" aria-live="polite" hidden></div>
+
+<script>
+'use strict';
+const NB=50;
+const COV_OPTS=[[0,'Any'],[20,'20%'],[50,'50%'],[80,'80%'],[100,'100%']];
+const READ_OPTS=[[1,'1'],[5,'5'],[10,'10'],[20,'20']];
+const SAMPLES=new Map();
+const state={cov:0,reads:1,measure:'reads',sel:0,view:{},cur:null,q:'',cmp:'depth',sort:{}};
+let qTerms=[];
+
+const $=(s,e=document)=>e.querySelector(s);
+const NS='http://www.w3.org/2000/svg';
+function el(tag,props,...kids){
+  const e=document.createElement(tag);
+  for(const k in (props||{})){ if(props[k]==null) continue; if(k==='text') e.textContent=props[k]; else e.setAttribute(k,props[k]); }
+  for(const c of kids) if(c!=null) e.append(c);
+  return e;
+}
+function sv(tag,props,...kids){
+  const e=document.createElementNS(NS,tag);
+  for(const k in (props||{})){ if(props[k]==null) continue; if(k==='text') e.textContent=props[k]; else e.setAttribute(k,props[k]); }
+  for(const c of kids) if(c!=null) e.append(c);
+  return e;
+}
+const fmt=n=>Math.round(n).toLocaleString('en-US');
+const fmtDepth=d=>d>=100?d.toFixed(0):d>=10?d.toFixed(1):d.toFixed(2);
+const fmtPct=c=>c>=99.995?'100%':(c<10?c.toFixed(1):c.toFixed(0))+'%';
+const cur=()=>SAMPLES.get(state.cur);
+const G=()=>cur().genes;
+const matchQ=g=>!qTerms.length||qTerms.every(t=>g._s.includes(t));
+const pass=g=>g.c>=state.cov-1e-9&&g.r>=state.reads&&matchQ(g);
+const shown=()=>G().filter(pass);
+const median=a=>{if(!a.length)return 0;const s=[...a].sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2;};
+
+/* parse one rgi bwt allele_mapping_data.json */
+function parseSample(name,text){
+  let arr;
+  try{ arr=JSON.parse(text); }
+  catch(e){ throw new Error('not valid JSON ('+e.message+')'); }
+  if(!Array.isArray(arr)) throw new Error('expected a JSON array of allele records');
+  let nEmpty=0; const genes=[];
+  for(const rec of arr){
+    if(!rec||!rec.id||!rec.cvterm_name){nEmpty++;continue;}
+    const rs=rec.reads||{},pc=rec.percent_coverage||{},rf=rec.reference||{},res=rec.resistomes||{};
+    const L=parseInt(rf.sequence_length,10)||0;
+    const r=parseInt(rs.mapped,10)||0;
+    const h=new Array(NB).fill(0);
+    for(const al of (rec.alignments||[])){
+      const p=parseInt(al.pos,10)||1;
+      let b=L>0?Math.floor((p-1)*NB/L):0;
+      if(b<0)b=0; if(b>=NB)b=NB-1;
+      h[b]++;
+    }
+    genes.push({
+      n:String(rec.cvterm_name), a:String(rec.aro_accession||''),
+      r, d:parseFloat(rec.depth)||0, c:parseFloat(pc.covered)||0,
+      q:parseFloat(rec.mapq_average)||0, L,
+      m:[].concat(res['Resistance Mechanism']||[]),
+      g:[].concat(res['Drug Class']||[]),
+      f:[].concat(res['AMR Gene Family']||[]),
+      p:[].concat(rec.observed_in_pathogens||[]).map(x=>typeof x==='string'?x.trim().replace(/,+$/,'').trim():x).filter(x=>x&&x!=='no data'),
+      h
+    });
+  }
+  if(!genes.length) throw new Error(arr.length?'no RGI allele records found (expected objects with "id" and "cvterm_name")':'file contains an empty array');
+  for(const o of genes) o._s=[o.n,o.a,'aro:'+o.a,...o.m,...o.g,...o.f,...o.p].join('\u0001').toLowerCase();
+  return {name,genes,nEmpty,nRecords:arr.length,totalReads:genes.reduce((s,g)=>s+g.r,0)};
+}
+
+/* tooltip */
+const tip=$('#tip');
+function showTip(title,rows,cx,cy){
+  tip.replaceChildren(el('b',{text:title}),...rows.map(([a,b])=>el('div',{class:'r'},el('span',{text:a}),el('span',{text:b}))));
+  tip.classList.add('on');
+  const w=tip.offsetWidth,h=tip.offsetHeight;
+  let x=cx+14,y=cy+14;
+  if(x+w>innerWidth-8)x=cx-w-14;
+  if(y+h>innerHeight-8)y=cy-h-14;
+  tip.style.left=Math.max(8,x)+'px';tip.style.top=Math.max(8,y)+'px';
+}
+const hideTip=()=>tip.classList.remove('on');
+const geneTip=(g,cx,cy)=>showTip(g.n,[['Mapped reads',fmt(g.r)],['Mean depth',fmtDepth(g.d)+'×'],['Reference covered',fmtPct(g.c)],['Length',fmt(g.L)+' bp']],cx,cy);
+
+/* theme */
+function cycleTheme(){
+  const r=document.documentElement;
+  const now=r.getAttribute('data-theme');
+  const sysDark=matchMedia('(prefers-color-scheme: dark)').matches;
+  const eff=now||(sysDark?'dark':'light');
+  if(eff==='light'){r.setAttribute('data-theme','dark');try{localStorage.setItem('rgi-bwt-theme','dark');}catch(e){}}
+  else{r.setAttribute('data-theme','light');try{localStorage.setItem('rgi-bwt-theme','light');}catch(e){}}
+}
+try{const t=localStorage.getItem('rgi-bwt-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}
+$('#theme').addEventListener('click',cycleTheme);
+$('#theme0').addEventListener('click',cycleTheme);
+
+/* filters */
+function seg(host,opts,key){
+  if(host.children.length!==opts.length){
+    host.replaceChildren(...opts.map(([v,l])=>{
+      const b=el('button',{type:'button',text:l});
+      b.addEventListener('click',()=>{state[key]=v;renderAll();});
+      return b;
+    }));
+  }
+  opts.forEach(([v],i)=>host.children[i].setAttribute('aria-pressed',String(state[key]===v)));
+}
+function renderFilters(){
+  seg($('#f-cov'),COV_OPTS,'cov');
+  seg($('#f-reads'),READ_OPTS,'reads');
+  seg($('#f-measure'),[['reads','Mapped reads'],['genes','Genes']],'measure');
+  $('#reset').hidden=state.cov===0&&state.reads===1&&!state.q;
+}
+$('#reset').addEventListener('click',()=>{state.cov=0;state.reads=1;state.q='';qTerms=[];$('#q').value='';renderAll();});
+let qt;
+$('#q').addEventListener('input',e=>{clearTimeout(qt);qt=setTimeout(()=>{state.q=e.target.value.trim();qTerms=state.q.toLowerCase().split(/\s+/).filter(Boolean);renderAll();},120);});
+document.querySelectorAll('.tog').forEach(b=>b.addEventListener('click',()=>{
+  const k=b.dataset.card;state.view[k]=state.view[k]==='table'?'chart':'table';renderAll();
+}));
+
+
+function renderKpis(S){
+  const c=cur();
+  const reads=S.reduce((s,g)=>s+g.r,0);
+  const classes=new Set(S.flatMap(g=>g.g));
+  const tiles=[
+    ['Genes shown',fmt(S.length),'of '+fmt(c.genes.length)+' with mapped reads'],
+    ['Mapped reads',fmt(reads),(c.totalReads?(reads/c.totalReads*100).toFixed(reads===c.totalReads?0:1):0)+'% of '+fmt(c.totalReads)],
+    ['Median reference covered',S.length?fmtPct(median(S.map(g=>g.c))):'–','of each gene’s length'],
+    ['Drug classes reached',fmt(classes.size),'listed for these genes'],
+  ];
+  $('#kpis').replaceChildren(...tiles.map(([l,v,s])=>el('div',{class:'tile'},el('div',{class:'l',text:l}),el('div',{class:'v',text:v}),el('div',{class:'s',text:s}))));
+}
+
+/* table helper */
+async function copyText(t){
+  try{ await navigator.clipboard.writeText(t); return true; }catch(e){}
+  try{
+    const ta=el('textarea',{readonly:'',style:'position:fixed;top:0;left:0;opacity:0'});
+    ta.value=t;document.body.append(ta);ta.select();
+    const ok=document.execCommand('copy');ta.remove();return ok;
+  }catch(e){ return false; }
+}
+function tableView(cols,rows,fk){
+  const st=state.sort[fk]||(state.sort[fk]={k:-1,d:1});
+  if(st.k>=cols.length)st.k=-1;
+  const val=(c,r)=>c.v?c.v(r):c.f(r);
+  const sorted=()=>{
+    if(st.k<0)return rows;
+    const c=cols[st.k];
+    return [...rows].sort((a,b)=>{
+      const x=val(c,a),y=val(c,b);
+      const d=(typeof x==='number'&&typeof y==='number')?x-y:String(x).localeCompare(String(y),undefined,{numeric:true});
+      return d*st.d;
+    });
+  };
+  const tbody=el('tbody');
+  const ths=cols.map((c,i)=>{
+    const b=el('button',{type:'button',class:'sb'},c.h,el('span',{class:'ar','aria-hidden':'true'}));
+    b.addEventListener('click',()=>{ if(st.k===i)st.d=-st.d; else{st.k=i;st.d=c.n?-1:1;} paint(); });
+    return el('th',{class:c.n?'n':'',scope:'col'},b);
+  });
+  function paint(){
+    ths.forEach((th,i)=>{
+      th.setAttribute('aria-sort',st.k===i?(st.d>0?'ascending':'descending'):'none');
+      th.querySelector('.ar').textContent=st.k===i?(st.d>0?'▲':'▼'):'↕';
+    });
+    tbody.replaceChildren(...sorted().map(r=>el('tr',{},...cols.map(c=>el('td',{class:(c.n?'n ':'')+(c.w?'w':''),text:c.f(r)})))));
+  }
+  const copy=el('button',{type:'button',class:'ghost',text:'Copy as TSV'});
+  copy.addEventListener('click',async()=>{
+    const clean=v=>String(v).replace(/[\t\r\n]+/g,' ');
+    const tsv=[cols.map(c=>clean(c.h)).join('\t'),...sorted().map(r=>cols.map(c=>clean(val(c,r))).join('\t'))].join('\n');
+    const ok=await copyText(tsv);
+    copy.textContent=ok?'Copied '+rows.length+' rows':'Copy blocked by the browser';
+    setTimeout(()=>{copy.textContent='Copy as TSV';},1800);
+  });
+  paint();
+  return el('div',{},el('div',{class:'tools'},copy),
+    el('div',{class:'tbl',tabindex:'0','aria-label':'Data table','data-fk':fk+':tbl'},el('table',{},el('thead',{},el('tr',{},...ths)),tbody)));
+}
+
+
+let scatterPts=[],hoverI=-1;
+function drawScatter(){
+  const host=$('#v-scatter');
+  const S=shown();
+  if(state.view.scatter==='table'){
+    const rows=[...S].sort((a,b)=>b.r-a.r);
+    host.replaceChildren(rows.length?tableView([
+      {h:'Gene',f:g=>g.n,w:1},{h:'ARO',f:g=>g.a},{h:'Reads',n:1,f:g=>fmt(g.r),v:g=>g.r},{h:'Depth (×)',n:1,f:g=>fmtDepth(g.d),v:g=>g.d},{h:'Covered (%)',n:1,f:g=>fmtPct(g.c),v:g=>g.c},{h:'Length (bp)',n:1,f:g=>fmt(g.L),v:g=>g.L}],rows,'scatter'):el('div',{class:'empty',text:'No genes match these filters.'}));
+    return;
+  }
+  const W=host.clientWidth||600;
+  const H=W<520?300:W<900?360:430;
+  const m={l:58,r:14,t:12,b:44},iw=W-m.l-m.r,ih=H-m.t-m.b;
+  const LO=Math.log10(0.005),HI=3;
+  const X=v=>m.l+v/100*iw;
+  const Y=v=>m.t+ih-(Math.log10(Math.max(v,0.005))-LO)/(HI-LO)*ih;
+  const svg=sv('svg',{viewBox:`0 0 ${W} ${H}`,width:W,height:H,role:'img',tabindex:'0','data-fk':'scatter','aria-label':'Scatter of reference length covered against mean read depth for each gene. Use left and right arrow keys to step through genes, Enter to select.'});
+  [0.01,0.1,1,10,100,1000].forEach(v=>{
+    svg.append(sv('line',{x1:m.l,x2:m.l+iw,y1:Y(v),y2:Y(v),stroke:'var(--grid)','stroke-width':1}));
+    svg.append(sv('text',{x:m.l-8,y:Y(v)+4,'text-anchor':'end',text:v>=1000?'1,000':String(v)}));
+  });
+  [0,20,40,60,80,100].forEach(v=>{
+    svg.append(sv('line',{x1:X(v),x2:X(v),y1:m.t,y2:m.t+ih,stroke:'var(--grid)','stroke-width':1}));
+    svg.append(sv('text',{x:X(v),y:m.t+ih+16,'text-anchor':v===0?'start':v===100?'end':'middle',text:v+'%'}));
+  });
+  svg.append(sv('line',{x1:m.l,x2:m.l+iw,y1:m.t+ih,y2:m.t+ih,stroke:'var(--axis)','stroke-width':1}));
+  svg.append(sv('text',{class:'ttl',x:m.l+iw/2,y:H-6,'text-anchor':'middle',text:'Reference length covered'}));
+  svg.append(sv('text',{class:'ttl',transform:`translate(12 ${m.t+ih/2}) rotate(-90)`,'text-anchor':'middle',text:'Mean depth (×, log scale)'}));
+  if(state.cov>0){
+    svg.append(sv('line',{x1:X(state.cov),x2:X(state.cov),y1:m.t,y2:m.t+ih,stroke:'var(--ink2)','stroke-width':1}));
+    svg.append(sv('text',{x:X(state.cov)-5,y:m.t+11,'text-anchor':'end',text:'min '+state.cov+'%'}));
+  }
+  scatterPts=G().map((g,i)=>({i,g,x:X(g.c),y:Y(g.d),ok:pass(g)}));
+  const order=[...scatterPts].sort((a,b)=>a.ok-b.ok);
+  for(const p of order){
+    svg.append(sv('circle',{class:'pt',cx:p.x,cy:p.y,r:4.5,fill:p.ok?'var(--s1)':'var(--ctx)',stroke:'var(--surface)','stroke-width':2}));
+  }
+  const sp=scatterPts[state.sel];
+  if(sp) svg.append(sv('circle',{cx:sp.x,cy:sp.y,r:7,fill:'none',stroke:'var(--ink)','stroke-width':2,'pointer-events':'none'}));
+  const hov=sv('circle',{r:8,fill:'none',stroke:'var(--ink2)','stroke-width':1.5,'pointer-events':'none',visibility:'hidden'});
+  svg.append(hov);
+  const near=(mx,my)=>{let b=null,bd=24;for(const p of scatterPts){const d=Math.hypot(p.x-mx,p.y-my);if(d<bd||(d===bd&&b&&p.ok&&!b.ok)){bd=d;b=p;}}return b;};
+  const pos=e=>{const r=svg.getBoundingClientRect();return [(e.clientX-r.left)*(W/r.width),(e.clientY-r.top)*(H/r.height)];};
+  const focusPt=(p,cx,cy)=>{hov.setAttribute('cx',p.x);hov.setAttribute('cy',p.y);hov.setAttribute('visibility','visible');geneTip(p.g,cx,cy);};
+  svg.addEventListener('pointermove',e=>{const [mx,my]=pos(e);const p=near(mx,my);if(p){focusPt(p,e.clientX,e.clientY);svg.style.cursor='pointer';}else{hov.setAttribute('visibility','hidden');hideTip();svg.style.cursor='';}});
+  svg.addEventListener('pointerleave',()=>{hov.setAttribute('visibility','hidden');hideTip();});
+  svg.addEventListener('click',e=>{const [mx,my]=pos(e);const p=near(mx,my);if(p){state.sel=p.i;renderAll();}});
+  let kb=-1;
+  svg.addEventListener('keydown',e=>{
+    const list=scatterPts.filter(p=>p.ok).sort((a,b)=>a.g.c-b.g.c||a.g.d-b.g.d);
+    if(!list.length)return;
+    if(e.key==='ArrowRight'||e.key==='ArrowLeft'){
+      e.preventDefault();kb=(kb+(e.key==='ArrowRight'?1:-1)+list.length)%list.length;
+      const p=list[kb],r=svg.getBoundingClientRect();
+      focusPt(p,r.left+p.x*(r.width/W),r.top+p.y*(r.height/H));
+    }else if(e.key==='Enter'&&kb>=0){state.sel=list[kb].i;renderAll();}
+  });
+  svg.addEventListener('blur',()=>{hov.setAttribute('visibility','hidden');hideTip();});
+  host.replaceChildren(el('div',{class:'plot'},svg));
+}
+
+/* ranked bars */
+function bars(hostId,rows,opts){
+  const host=$(hostId);
+  if(state.view[opts.card]==='table'){host.replaceChildren(rows.length?tableView(opts.cols,rows,opts.card):el('div',{class:'empty',text:'No genes match these filters.'}));return;}
+  if(!rows.length){host.replaceChildren(el('div',{class:'empty',text:'No genes match these filters.'}));return;}
+  const top=rows.slice(0,opts.n);
+  const max=Math.max(...top.map(r=>r.value),1);
+  const list=el('div',{class:'bars'});
+  if(opts.head) list.append(el('div',{class:'bhead'},el('span',{text:opts.head[0]}),el('span',{text:opts.head[1]}),el('span',{text:opts.head[2]})));
+  for(const r of top){
+    const w=r.value/max;
+    const row=el('div',{class:'brow'+(opts.pick?' pick':'')+(r.sel?' sel':''),tabindex:'0','data-fk':hostId+':'+r.label});
+    if(opts.pick){row.setAttribute('role','button');row.setAttribute('aria-label',r.label+', '+r.valueText);}
+    row.append(el('span',{class:'nm',text:r.label}),
+      el('div',{class:'tr'},el('div',{class:'bar',style:`width:calc((100% - 54px) * ${w})`}),el('span',{class:'vl',style:`left:calc((100% - 54px) * ${w} + 6px)`,text:r.valueText})),
+      el('span',{class:'as',text:r.aside||''}));
+    const show=e=>{const b=row.getBoundingClientRect();showTip(r.label,r.tip,e.clientX||b.left+b.width/2,e.clientY||b.top+b.height);};
+    row.addEventListener('pointermove',show);row.addEventListener('pointerleave',hideTip);
+    row.addEventListener('focus',show);row.addEventListener('blur',hideTip);
+    if(opts.pick){row.addEventListener('click',()=>{state.sel=r.idx;renderAll();});
+      row.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();state.sel=r.idx;renderAll();}});}
+    list.append(row);
+  }
+  host.replaceChildren(list);
+}
+function tally(S,key){
+  const m=new Map();
+  for(const g of S)for(const k of g[key]){const o=m.get(k)||{genes:0,reads:0};o.genes++;o.reads+=g.r;m.set(k,o);}
+  const byReads=state.measure==='reads';
+  return [...m].map(([label,o])=>({label,genes:o.genes,reads:o.reads,value:byReads?o.reads:o.genes}))
+    .sort((a,b)=>b.value-a.value||b.genes-a.genes||a.label.localeCompare(b.label));
+}
+function tallyCard(S,key,card,n){
+  const rows=tally(S,key).map(r=>({...r,valueText:fmt(r.value),tip:[['Genes',fmt(r.genes)],['Mapped reads',fmt(r.reads)]]}));
+  bars('#v-'+card,rows,{card,n,cols:[{h:'Label',f:r=>r.label,w:1},{h:'Genes',n:1,f:r=>fmt(r.genes),v:r=>r.genes},{h:'Mapped reads',n:1,f:r=>fmt(r.reads),v:r=>r.reads}]});
+  return rows.length;
+}
+
+/* detail */
+function drawDetail(){
+  const genes=G();
+  const g=genes[state.sel]||genes[0];
+  const host=$('#detail');
+  if(!g){host.replaceChildren(el('div',{class:'empty',text:'No genes in this sample.'}));return;}
+  const ok=pass(g);
+  const head=el('div',{class:'dh'},
+    el('h2',{},g.n,ok?null:el('span',{class:'out',text:'Outside filters'})),
+    el('div',{class:'acc',text:'ARO:'+g.a}));
+  const stats=el('dl',{class:'stats'},...[['Reads',fmt(g.r)],['Mean depth',fmtDepth(g.d)+'×'],['Covered',fmtPct(g.c)],['Length',fmt(g.L)+' bp'],['Mean MAPQ',g.q.toFixed(0)]]
+    .map(([a,b])=>el('div',{},el('dt',{text:a}),el('dd',{text:b}))));
+  const hist=el('div',{class:'sec'},el('h3',{text:'Where the reads start along the gene'}),el('div',{id:'hist',class:'plot'}));
+  const chips=(t,a)=>el('div',{class:'sec'},el('h3',{text:t}),el('div',{class:'chips'},...a.map(x=>el('span',{class:'chip',text:x}))));
+  host.replaceChildren(head,stats,hist,chips('Resistance mechanism',g.m),chips('Drug classes ('+g.g.length+')',g.g),chips('Gene family',g.f),
+    el('div',{class:'sec'},el('h3',{text:'Observed in'}),el('div',{text:g.p.join(', ')||'No data'})));
+  drawHist(g);
+}
+function drawHist(g){
+  const host=$('#hist');const W=host.clientWidth||360,H=120;
+  const m={l:34,r:4,t:8,b:22},iw=W-m.l-m.r,ih=H-m.t-m.b;
+  const max=Math.max(...g.h,1);
+  const svg=sv('svg',{viewBox:`0 0 ${W} ${H}`,width:W,height:H,role:'img','aria-label':'Histogram of read start positions along '+g.n});
+  const step=iw/NB;
+  svg.append(sv('line',{x1:m.l,x2:m.l+iw,y1:m.t,y2:m.t,stroke:'var(--grid)'}));
+  svg.append(sv('text',{x:m.l-6,y:m.t+4,'text-anchor':'end',text:String(max)}));
+  svg.append(sv('text',{x:m.l-6,y:m.t+ih+4,'text-anchor':'end',text:'0'}));
+  svg.append(sv('text',{x:m.l,y:H-5,text:'1'}));
+  svg.append(sv('text',{x:m.l+iw,y:H-5,'text-anchor':'end',text:fmt(g.L)+' bp'}));
+  g.h.forEach((c,i)=>{
+    const x=m.l+i*step+1,w=Math.max(1,step-2),h=c/max*ih,y=m.t+ih-h;
+    if(c>0){const r=Math.min(4,w/2,h);
+      svg.append(sv('path',{d:`M${x},${m.t+ih}V${y+r}Q${x},${y} ${x+r},${y}H${x+w-r}Q${x+w},${y} ${x+w},${y+r}V${m.t+ih}Z`,fill:'var(--s1)'}));}
+    const lo=Math.floor(i*g.L/NB)+1,hi=Math.floor((i+1)*g.L/NB);
+    const hit=sv('rect',{x:m.l+i*step,y:m.t,width:step,height:ih,fill:'transparent'});
+    hit.addEventListener('pointermove',e=>showTip(fmt(lo)+'–'+fmt(hi)+' bp',[['Reads starting here',fmt(c)]],e.clientX,e.clientY));
+    hit.addEventListener('pointerleave',hideTip);
+    svg.append(hit);
+  });
+  svg.append(sv('line',{x1:m.l,x2:m.l+iw,y1:m.t+ih,y2:m.t+ih,stroke:'var(--axis)'}));
+  host.replaceChildren(svg);
+}
+
+/* across samples */
+const CMP_OPTS=[['depth','Depth'],['cov','Covered'],['reads','Reads']];
+const cmpVal=(g,m)=>m==='depth'?g.d:m==='cov'?g.c:g.r;
+const cmpFmt=(g,m)=>m==='depth'?fmtDepth(g.d)+'×':m==='cov'?fmtPct(g.c):fmt(g.r);
+const cmpT=(v,m,maxR)=>{
+  const t=m==='cov'?v/100:m==='depth'?(Math.log10(Math.max(v,0.01))+2)/5:(maxR>1?Math.log10(Math.max(v,1))/Math.log10(maxR):1);
+  return Math.min(1,Math.max(0,t));
+};
+function cmpRows(){
+  const names=[...SAMPLES.keys()].sort((a,b)=>a.localeCompare(b));
+  const by=new Map();
+  for(const s of names)for(const g of SAMPLES.get(s).genes){
+    if(!pass(g))continue;
+    const k=g.a||g.n;let o=by.get(k);
+    if(!o){o={key:k,n:g.n,cells:new Map(),total:0};by.set(k,o);}
+    o.cells.set(s,g);o.total+=g.r;
+  }
+  return {names,rows:[...by.values()].sort((a,b)=>b.total-a.total||a.n.localeCompare(b.n))};
+}
+function pick(sample,g){
+  if(sample!==state.cur){state.cur=sample;$('#samp').value=sample;}
+  state.sel=Math.max(0,G().indexOf(g));
+  renderAll();
+  $('#detail').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'nearest'});
+}
+function drawCmp(){
+  const card=$('#cmp');
+  const multi=SAMPLES.size>=2;
+  card.hidden=!multi;
+  if(!multi)return;
+  seg($('#f-cmp'),CMP_OPTS,'cmp');
+  const m=state.cmp,{names,rows}=cmpRows(),host=$('#v-cmp');
+  const what={depth:'mean depth',cov:'share of reference covered',reads:'mapped reads'}[m];
+  $('#p-cmp').textContent='Top genes by total reads across '+names.length+' samples, coloured by '+what+'. Empty cells are genes that are absent or filtered out in that sample.';
+  if(!rows.length){host.replaceChildren(el('div',{class:'empty',text:'No genes match these filters in any sample.'}));return;}
+  if(state.view.cmp==='table'){
+    host.replaceChildren(tableView([{h:'Gene',f:r=>r.n,w:1},
+      ...names.map(n=>({h:n,n:1,f:r=>r.cells.has(n)?cmpFmt(r.cells.get(n),m):'–',v:r=>r.cells.has(n)?cmpVal(r.cells.get(n),m):-1})),
+      {h:'Total reads',n:1,f:r=>fmt(r.total),v:r=>r.total}],rows,'cmp'));
+    return;
+  }
+  const top=rows.slice(0,25);
+  const maxR=Math.max(1,...top.flatMap(r=>[...r.cells.values()].map(g=>g.r)));
+  const grid=el('div',{class:'hmg',style:`grid-template-columns:minmax(140px,230px) repeat(${names.length},minmax(30px,72px))`});
+  grid.append(el('div'));
+  names.forEach(n=>grid.append(el('div',{class:'hmh'+(n===state.cur?' cur':''),text:n,title:n})));
+  const selG=cur().genes[state.sel];
+  for(const r of top){
+    grid.append(el('div',{class:'hml',text:r.n,title:r.n}));
+    for(const n of names){
+      const g=r.cells.get(n);
+      if(!g){grid.append(el('div',{class:'hmc no'}));continue;}
+      const t=cmpT(cmpVal(g,m),m,maxR);
+      const b=el('button',{type:'button',class:'hmc'+(n===state.cur&&g===selG?' cur':''),
+        style:`background:color-mix(in srgb,var(--s1) ${(16+84*t).toFixed(0)}%,var(--surface))`,
+        'aria-label':r.n+', '+n+': '+cmpFmt(g,m),'data-fk':'cmp:'+r.key+'|'+n});
+      const show=e=>{const bb=b.getBoundingClientRect();showTip(r.n,[['Sample',n],['Mapped reads',fmt(g.r)],['Mean depth',fmtDepth(g.d)+'×'],['Reference covered',fmtPct(g.c)]],e.clientX||bb.left+bb.width/2,e.clientY||bb.bottom);};
+      b.addEventListener('pointermove',show);b.addEventListener('pointerleave',hideTip);
+      b.addEventListener('focus',show);b.addEventListener('blur',hideTip);
+      b.addEventListener('click',()=>pick(n,g));
+      grid.append(b);
+    }
+  }
+  const lo={depth:'0.01×',cov:'0%',reads:'1'}[m],hi={depth:'1,000×',cov:'100%',reads:fmt(maxR)}[m];
+  host.replaceChildren(el('div',{class:'hm'},grid),
+    el('div',{class:'lg',style:'margin-top:10px'},el('span',{text:lo}),el('i'),el('span',{text:hi}),
+      el('span',{text:(rows.length>25?'Showing 25 of '+fmt(rows.length)+' genes. Use the table view for all. ':'')+'Click a cell to open that gene in its sample.'})));
+}
+
+/* orchestration */
+function renderAll(){
+  if(!state.cur||!SAMPLES.has(state.cur))return;
+  const ae=document.activeElement,fk=ae&&ae.dataset?ae.dataset.fk:null;
+  const c=cur();
+  const S=shown();
+  hideTip();
+  renderFilters();
+  renderKpis(S);
+  drawScatter();
+  drawDetail();
+  const byReads=state.measure==='reads';
+  const gRows=[...S].sort((a,b)=>b.r-a.r||b.c-a.c).map(g=>{
+    const idx=G().indexOf(g);
+    return {idx,label:g.n,value:g.r,valueText:fmt(g.r),aside:fmtPct(g.c),cov:g.c,sel:idx===state.sel,
+      tip:[['Mapped reads',fmt(g.r)],['Mean depth',fmtDepth(g.d)+'×'],['Reference covered',fmtPct(g.c)],['Length',fmt(g.L)+' bp']]};
+  });
+  bars('#v-genes',gRows,{card:'genes',n:12,pick:true,head:['Gene','Mapped reads','Covered'],
+    cols:[{h:'Gene',f:r=>r.label,w:1},{h:'Reads',n:1,f:r=>r.valueText,v:r=>r.value},{h:'Covered (%)',n:1,f:r=>r.aside,v:r=>r.cov}]});
+  const nd=tallyCard(S,'g','drug',12),nm=tallyCard(S,'m','mech',8),nf=tallyCard(S,'f','fam',10);
+  const u=byReads?'mapped reads':'genes';
+  $('#p-drug').textContent='Top 12 of '+nd+' classes by '+u+'. A gene can list several classes, so bars overlap.';
+  $('#p-mech').textContent=nm+' mechanisms by '+u+'. A gene can carry more than one, so bars overlap.';
+  $('#p-fam').textContent='Top 10 of '+nf+' families by '+u+'.';
+  document.querySelectorAll('.tog').forEach(b=>{const t=state.view[b.dataset.card]==='table';b.textContent=t?'Chart':'Table';b.setAttribute('aria-pressed',String(t));});
+  $('#h1').textContent=c.name+' resistome';
+  $('#sub').textContent='CARD protein homolog model, '+fmt(c.genes.length)+' resistance genes with mapped reads ('+fmt(c.totalReads)+' mate reads in total). '
+    +fmt(c.nEmpty)+' empty records in the source file are left out. '+fmt(SAMPLES.size)+' sample'+(SAMPLES.size===1?'':'s')+' loaded.';
+  drawCmp();
+  if(fk){const n=document.querySelector('[data-fk="'+CSS.escape(fk)+'"]');if(n&&n!==document.activeElement)n.focus({preventScroll:true});}
+}
+
+/* file loading */
+function sampleNameFrom(filename){
+  return filename.replace(/[._]allele_mapping_data\.json$/i,'').replace(/\.json$/i,'')||filename;
+}
+function baseName(name){
+  const parts=name.split(/[\\/]/);
+  return sampleNameFrom(parts[parts.length-1]||name);
+}
+function uniqueName(name){
+  if(!SAMPLES.has(name))return name;
+  let i=2;while(SAMPLES.has(name+' ('+i+')'))i++;
+  return name+' ('+i+')';
+}
+function selectSample(name){
+  state.cur=name;
+  const genes=G();
+  state.sel=genes.length?genes.reduce((b,g,i)=>g.r>genes[b].r?i:b,0):0;
+  $('#samp').value=name;
+  renderAll();
+}
+function refreshPicker(){
+  const sel=$('#samp');
+  const names=[...SAMPLES.keys()].sort((a,b)=>a.localeCompare(b));
+  sel.replaceChildren(...names.map(n=>el('option',{value:n,text:n})));
+  if(state.cur)sel.value=state.cur;
+}
+function showErrs(list){
+  for(const box of [$('#errs'),$('#errs2')]){
+    if(!list.length){box.hidden=true;box.replaceChildren();continue;}
+    const x=el('button',{type:'button',class:'ghost',text:'Dismiss'});
+    x.addEventListener('click',()=>showErrs([]));
+    box.replaceChildren(el('b',{text:list.length===1?'1 file could not be loaded':list.length+' files could not be loaded'}),
+      el('ul',{},...list.map(e=>el('li',{text:e.name+': '+e.message}))),x);
+    box.hidden=false;
+  }
+}
+const tick=()=>new Promise(r=>requestAnimationFrame(()=>setTimeout(r,0)));
+function busy(t){const b=$('#busy');if(t){b.textContent=t;b.hidden=false;}else b.hidden=true;}
+async function addFiles(fileList){
+  const files=[...fileList].filter(f=>f&&f.name);
+  if(!files.length)return;
+  const errs=[];let added=0,firstNew=null;
+  for(let i=0;i<files.length;i++){
+    const f=files[i];
+    busy('Reading '+(i+1)+' of '+files.length+': '+f.name+' ('+(f.size/1048576).toFixed(1)+' MB)…');
+    await tick();
+    try{
+      const text=await f.text();
+      const s=parseSample(baseName(f.name),text);
+      const name=uniqueName(s.name);
+      s.name=name;
+      SAMPLES.set(name,s);
+      if(!firstNew)firstNew=name;
+      added++;
+    }catch(e){
+      let msg=e&&e.message?e.message:String(e);
+      if(/string length|allocation|memory/i.test(msg))msg+=' (this file is too large to open in a browser tab)';
+      errs.push({name:f.name,message:msg});
+    }
+  }
+  busy('');
+  showErrs(errs);
+  if(added){
+    refreshPicker();
+    selectSample(firstNew);
+    $('#loadscr').hidden=true;
+    $('#app').hidden=false;
+    renderAll();
+  }
+}
+$('#filein').addEventListener('change',e=>{addFiles(e.target.files);e.target.value='';});
+$('#browse').addEventListener('click',()=>$('#filein').click());
+$('#more').addEventListener('click',()=>$('#filein').click());
+$('#samp').addEventListener('change',e=>selectSample(e.target.value));
+$('#rm').addEventListener('click',()=>{
+  SAMPLES.delete(state.cur);
+  if(!SAMPLES.size){$('#clear').click();return;}
+  refreshPicker();selectSample([...SAMPLES.keys()].sort((a,b)=>a.localeCompare(b))[0]);
+});
+$('#clear').addEventListener('click',()=>{
+  SAMPLES.clear();state.cur=null;state.sel=0;state.view={};
+  $('#app').hidden=true;$('#loadscr').hidden=false;showErrs([]);
+});
+const drop=$('#drop');
+const hasFiles=e=>e.dataTransfer&&[...(e.dataTransfer.types||[])].includes('Files');
+let dragDepth=0;
+window.addEventListener('dragenter',e=>{if(hasFiles(e)){dragDepth++;drop.classList.add('over');}});
+window.addEventListener('dragleave',e=>{if(hasFiles(e)){dragDepth=Math.max(0,dragDepth-1);if(!dragDepth)drop.classList.remove('over');}});
+window.addEventListener('dragover',e=>{if(hasFiles(e))e.preventDefault();});
+window.addEventListener('drop',e=>{
+  if(!hasFiles(e))return;
+  e.preventDefault();dragDepth=0;drop.classList.remove('over');
+  if(e.dataTransfer.files.length)addFiles(e.dataTransfer.files);
+});
+
+$('#foot').textContent='Mean depth and coverage are as reported in the file. Reads are counted per mate. Mean MAPQ is shown as reported, not rescaled. Read-start positions use the alignment position of each mate, binned across the reference length. Tables sort when you click a column heading and copy as tab-separated text.';
+
+let rz;new ResizeObserver(()=>{clearTimeout(rz);rz=setTimeout(()=>{if(state.cur){drawScatter();drawDetail();}},80);}).observe($('#app'));
+</script>
+</body></html>
